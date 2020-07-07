@@ -72,6 +72,7 @@ stand <- function(x, v=var(x))
 
 
 #setwd("~/Data Spaces/Tesina")
+#setwd("~/Data Spaces/Tesina")
 parkinsons = read.csv(file = "parkinsons_updrs.csv", header=T)
 
 parkinsons <- parkinsons[,-c(11,17)] #elimino variabili perfettamente correlate
@@ -117,15 +118,15 @@ predictors <- parkPCA4s[,-(5:6)]
 #predictors$subject. = as.factor(parkinsons$subject.) #subject ? un fattore
 
 #standardizzazione predittori
-for(h in c(1,2,4,5))
-{
-  predictors[,h] <- stand(predictors[,h])
-}
+#for(h in c(1,2,4,5))
+#{
+#  predictors[,h] <- stand(predictors[,h])
+#}
 
-for(h in 6:(length(predictors)))
-{
-  predictors[,h] <- stand(predictors[,h],v=var(parkPCA4s$PC1)) #componenti principali, si standardizza con la varianza pi? grande
-}
+#for(h in 6:(length(predictors)))
+#{
+#  predictors[,h] <- stand(predictors[,h],v=var(parkPCA4s$PC1)) #componenti principali, si standardizza con la varianza pi? grande
+#}
 
 #predittori senza subject e test time
 predictors <- predictors[,-c(1,4)]
@@ -140,9 +141,6 @@ Total <- cbind(total_UPDRS,predictors)
 ParkM <- cbind(motor_UPDRS,X)
 ParkT <- cbind(total_UPDRS,X)
 
-
-
-
 #IL VERO CODICE INIZIA QUI
 
 InfoModels <- data.frame(Data=character(), Model=character(),Params=character(),Training=double(),Validation=double(),Test=double(),stringsAsFactors = FALSE)
@@ -150,14 +148,14 @@ InfoModels <- data.frame(Data=character(), Model=character(),Params=character(),
 
 set.seed(17)
 #DATASET CON PCA
-#{ShMotor <- Motor[sample(nrow(Motor)),]
-#ShTotal <- Total[sample(nrow(Total)),]
-#dtype<- "PCA"}
+{ShMotor <- Motor[sample(nrow(Motor)),]
+ShTotal <- Total[sample(nrow(Total)),]
+dtype<- "PCA"}
 
 #dataset completo
-{ShMotor <- ParkM[sample(nrow(ParkM)),]
-ShTotal <- ParkT[sample(nrow(ParkT)),]
-dtype <- "complete"}
+#{ShMotor <- ParkM[sample(nrow(ParkM)),]
+#ShTotal <- ParkT[sample(nrow(ParkT)),]
+#dtype <- "complete"}
 
 dm<-paste(dtype,"M",sep="-")
 dt<-paste(dtype,"T",sep="-")
@@ -215,6 +213,29 @@ InfoModels[nrow(InfoModels) + 1,] = list(dm,mod,I(list(tsvm.m$best.parameters)),
             
 #KNN
 mod="knn-reg"
+
+#standardizzare variabili
+if(dtype=="complete"){
+  TrMotorS.Y<-stand(TrMotor.Y)
+  TrMotorS.X<-apply(TrMotor.X,2,FUN=stand)
+  TsMotorS.Y<-stand(TsMotor.Y)
+  TsMotorS.X<-apply(TsMotor.X,2,FUN=stand)
+  TrTotalS.Y<-stand(TrTotal.Y)
+  TrTotalS.X<-apply(TrTotal.X,2,FUN=stand)
+  TsTotalS.Y<-stand(TsTotal.Y)
+  TsTotalS.X<-apply(TsTotal.X,2,FUN=stand)
+}else{
+  TrMotorS.Y<-(TrMotor.Y)
+  TrMotorS.X<-cbind(apply(TrMotor.X[,1:3],2,FUN=stand),TrMotor.X[,4:7])
+  TsMotorS.Y<-(TsMotor.Y)
+  TsMotorS.X<-cbind(apply(TsMotor.X[,1:3],2,FUN=stand),TsMotor.X[,4:7])
+  TrTotalS.Y<-(TrTotal.Y)
+  TrTotalS.X<-cbind(apply(TrTotal.X[,1:3],2,FUN=stand),TrTotal.X[,4:7])
+  TsTotalS.Y<-(TsTotal.Y)
+  TsTotalS.X<-cbind(apply(TsTotal.X[,1:3],2,FUN=stand),TsTotal.X[,4:7])
+}
+
+
 krange=1:50
 
 knnr.mse.V.T=numeric(length(krange))
@@ -228,18 +249,22 @@ for(K in krange)
   for(i in 1:NF)
   {
     indexes <- which(folds==i,arr.ind = TRUE)
-    TestTotal <- TrTotal[indexes,]
-    TestMotor <- TrMotor[indexes,]
-    TrainTotal <- TrTotal[-indexes,]    
-    TrainMotor <- TrMotor[-indexes,]
+    TestTotal.X <- TrTotalS.X[indexes,]
+    TestMotor.X <- TrMotorS.X[indexes,]
+    TrainTotal.X <- TrTotalS.X[-indexes,]    
+    TrainMotor.X <- TrMotorS.X[-indexes,]
+    TestTotal.Y <- TrTotalS.Y[indexes]
+    TestMotor.Y <- TrMotorS.Y[indexes]
+    TrainTotal.Y <- TrTotalS.Y[-indexes]    
+    TrainMotor.Y <- TrMotorS.Y[-indexes]
     
-    knnr.model.T <- knn.reg(train = TrainTotal[,-1],test = TestTotal[,-1], y=TrainTotal$total_UPDRS,k=K)
-    knnr.model.M <- knn.reg(train = TrainMotor[,-1],test = TestMotor[,-1], y=TrainMotor$motor_UPDRS,k=K)
+    knnr.model.T <- knn.reg(train = TrainTotal.X,test = TestTotal.X, y=TrainTotal.Y,k=K)
+    knnr.model.M <- knn.reg(train = TrainMotor.X,test = TestMotor.X, y=TrainMotor.Y,k=K)
     
-    knnr.mse.V.T[K] = knnr.mse.V.T[K]+sum((knnr.model.T$pred-TestTotal$total_UPDRS)^2)/(NF*nrow(TestTotal))
-    knnr.mse.V.M[K] = knnr.mse.V.M[K]+sum((knnr.model.M$pred-TestMotor$motor_UPDRS)^2)/(NF*nrow(TestMotor))    
-    knnr.r2.V.T[K] = knnr.r2.V.T[K]+rsq(knnr.model.T$pred,TestTotal$total_UPDRS)/NF
-    knnr.r2.V.M[K] = knnr.r2.V.M[K]+rsq(knnr.model.M$pred,TestMotor$motor_UPDRS)/NF    
+    knnr.mse.V.T[K] = knnr.mse.V.T[K]+sum((knnr.model.T$pred-TestTotal.Y)^2)/(NF*nrow(TestTotal))
+    knnr.mse.V.M[K] = knnr.mse.V.M[K]+sum((knnr.model.M$pred-TestMotor.Y)^2)/(NF*nrow(TestMotor))    
+    knnr.r2.V.T[K] = knnr.r2.V.T[K]+rsq(knnr.model.T$pred,TestTotal.Y)/NF
+    knnr.r2.V.M[K] = knnr.r2.V.M[K]+rsq(knnr.model.M$pred,TestMotor.Y)/NF    
   }
   
 }
@@ -247,22 +272,22 @@ for(K in krange)
 KT=which(knnr.r2.V.T==max(knnr.r2.V.T))         
 KM=which(knnr.r2.V.M==max(knnr.r2.V.M))             
 
-knnr.T = knn.reg(train= TrTotal[,-1],y=TrTotal$total_UPDRS,k=KT)
-knnr.M = knn.reg(train= TrMotor[,-1],y=TrMotor$motor_UPDRS,k=KM)
+knnr.T = knn.reg(train= TrTotalS.X,y=TrTotalS.Y,k=KT)
+knnr.M = knn.reg(train= TrMotorS.X,y=TrMotorS.Y,k=KM)
 
 knnr.r2.Tr.T <- knnr.T$R2Pred
 knnr.r2.Tr.M <- knnr.M$R2Pred
 
-knnr.T = knn.reg(train= TrTotal[,-1],test = TsTotal[,-1],y=TrTotal$total_UPDRS,k=KT)
-knnr.M = knn.reg(train= TrMotor[,-1],test= TsMotor[,-1],y=TrMotor$motor_UPDRS,k=KM)
+knnr.T = knn.reg(train= TrTotalS.X,test =TsTotalS.X,y=TrTotalS.Y,k=KT)
+knnr.M = knn.reg(train= TrMotorS.X,test=TsMotorS.X,y=TrMotorS.Y,k=KM)
 
 
-knnr.r2.Ts.T = rsq(knnr.T$pred,TsTotal$total_UPDRS)
-knnr.r2.Ts.M = rsq(knnr.M$pred,TsMotor$motor_UPDRS)
+knnr.r2.Ts.T = rsq(knnr.T$pred,TsTotalS.Y)
+knnr.r2.Ts.M = rsq(knnr.M$pred,TsMotorS.Y)
 
 
-InfoModels[nrow(InfoModels) + 1,] = list(dt,mod,I(list(K=KT)),knnr.r2.Tr.T,knnr.r2.V.T[K],knnr.r2.Ts.T)
-InfoModels[nrow(InfoModels) + 1,] = list(dm,mod,I(list(K=KM)),knnr.r2.Tr.M,knnr.r2.V.M[K],knnr.r2.Ts.M)
+InfoModels[nrow(InfoModels) + 1,] = list(dt,mod,I(list(K=KT)),knnr.r2.Tr.T,knnr.r2.V.T[KT],knnr.r2.Ts.T)
+InfoModels[nrow(InfoModels) + 1,] = list(dm,mod,I(list(K=KM)),knnr.r2.Tr.M,knnr.r2.V.M[KM],knnr.r2.Ts.M)
 
 
 
@@ -327,16 +352,16 @@ InfoModels[nrow(InfoModels) + 1,] = list(dm,mod,I(list(CP=bestCP.M)),tree.r2.Tr.
 #RANDOM FOREST
 mod="rf-reg"
 Mtries<-c(3,5,7)
-if(ncol(TrTotal)>7) Mtries<- c(Mtries,ncol(TrTotal.X))
+if(ncol(TrTotal.X)>7) Mtries<- c(Mtries,ncol(TrTotal.X))
 
 
 
 #ho dovuto fare la mia funzione personale di tuning
-trf.m <- MyRfTune(x=TrMotor.X,y=TrMotor.Y,mtries=Mtries,nsizes=c(1,2,5,10),maxtrees = 600)
-trf.t <- MyRfTune(x=TrTotal.X,y=TrTotal.Y,mtries=Mtries,nsizes=c(1,2,5,10),maxtrees = 1100)
+trf.m <- MyRfTune(x=TrMotor.X,y=TrMotor.Y,mtries=Mtries,nsizes=c(1,2,5,10),maxtrees = 2000)
+trf.t <- MyRfTune(x=TrTotal.X,y=TrTotal.Y,mtries=Mtries,nsizes=c(1,2,5,10),maxtrees = 2000)
 #si può risparmiare del tempo mettendo solo 2000 come numero di alberi e trovando il ginocchio usando l'out of bag error
 NTM=600
-NTT=1100
+NTT=800
 
   rf.r2.V.M = trf.m$best.params[["r2.V"]]
   rf.r2.V.T = trf.t$best.params[["r2.V"]]
@@ -366,6 +391,7 @@ InfoModels[nrow(InfoModels) + 1,] = list(dm,mod,I(list(data.frame(ntree=NTM,nvar
 #RIDGE REGRESSION
 
 #standardizzare variabili
+if(dtype=="complete"){
 TrMotorS.Y<-stand(TrMotor.Y)
 TrMotorS.X<-apply(TrMotor.X,2,FUN=stand)
 TsMotorS.Y<-stand(TsMotor.Y)
@@ -374,6 +400,16 @@ TrTotalS.Y<-stand(TrTotal.Y)
 TrTotalS.X<-apply(TrTotal.X,2,FUN=stand)
 TsTotalS.Y<-stand(TsTotal.Y)
 TsTotalS.X<-apply(TsTotal.X,2,FUN=stand)
+}else{
+  TrMotorS.Y<-(TrMotor.Y)
+  TrMotorS.X<-(TrMotor.X)
+  TsMotorS.Y<-(TsMotor.Y)
+  TsMotorS.X<-(TsMotor.X)
+  TrTotalS.Y<-(TrTotal.Y)
+  TrTotalS.X<-(TrTotal.X)
+  TsTotalS.Y<-(TsTotal.Y)
+  TsTotalS.X<-(TsTotal.X)
+}
 
 mod="ridge-reg"
 lambdas = 10^(seq(-4,0,0.1))
